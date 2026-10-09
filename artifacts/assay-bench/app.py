@@ -4,7 +4,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from assay_app.analysis import analyze_compounds
+from assay_app.analysis import (
+    LOW_DOSE_WARNING_THRESHOLD,
+    analyze_compounds,
+    lowest_dose_warnings,
+)
 from assay_app.data import (
     DEFAULT_DOSE_RESPONSE,
     DEFAULT_STRUCTURES,
@@ -32,11 +36,20 @@ def select_all_compounds(checkbox_keys: list[str]) -> None:
         st.session_state[key] = True
 
 
+def reset_fit_status_for_settings() -> None:
+    """Reset the status filter when fitting settings recalculate compound fits."""
+    for key in list(st.session_state):
+        if key.startswith("fit_status:"):
+            del st.session_state[key]
+    st.session_state["fit_settings_changed"] = True
+
+
 def restore_default_dataset() -> None:
     """Return this session to the initial sample data and clear pending uploads."""
     st.session_state["home_revision"] = st.session_state.get("home_revision", 0) + 1
     dataset_keys = {
-        "active_dataset", "dataset_revision", "dataset_names", "dataset_error"
+        "active_dataset", "dataset_revision", "dataset_names", "dataset_error",
+        "fix_response_limits", "fit_settings_changed",
     }
     filter_prefixes = (
         "compound_filter:", "fit_status:", "clear_selection:", "select_all:"
@@ -75,9 +88,11 @@ def assay_fingerprint(data: pd.DataFrame) -> str:
     max_entries=8,
     hash_funcs={pd.DataFrame: assay_fingerprint},
 )
-def cached_compound_analysis(data: pd.DataFrame, compound_ids: list[str]):
+def cached_compound_analysis(
+    data: pd.DataFrame, compound_ids: list[str], fix_response_limits: bool = False
+):
     """Reuse dataset-wide fits when only sidebar selections change."""
-    return analyze_compounds(data, compound_ids)
+    return analyze_compounds(data, compound_ids, fix_response_limits)
 
 
 def stop_analysis(message: str, analysis_tabs: tuple) -> None:
@@ -229,7 +244,20 @@ else:
     st.sidebar.success("All compound IDs match.")
 
 all_assay = valid_dose_rows(dose_df)
-all_fits, all_summary = cached_compound_analysis(all_assay, compound_ids)
+st.sidebar.subheader("Curve fitting")
+fix_response_limits = st.sidebar.toggle(
+    "Fix bottom/top at 0% / 100%",
+    key="fix_response_limits",
+    on_change=reset_fit_status_for_settings,
+    help=(
+        "Off: estimate the lower and upper response limits between 0% and 105%. "
+        "On: hold bottom at 0% and top at 100%, fitting only IC₅₀ and slope. "
+        "Measured responses are not changed."
+    ),
+)
+all_fits, all_summary = cached_compound_analysis(
+    all_assay, compound_ids, fix_response_limits
+)
 fit_status_options = sorted(all_summary["Fit status"].unique().tolist())
 initial_fit_status = all_summary.loc[
     all_summary["compound_id"] == compound_ids[0], "Fit status"
@@ -243,7 +271,11 @@ checkbox_keys = [
     for compound_id in compound_ids
 ]
 if status_widget_key not in st.session_state:
-    st.session_state[status_widget_key] = initial_fit_status
+    st.session_state[status_widget_key] = (
+        "All fit statuses"
+        if st.session_state.pop("fit_settings_changed", False)
+        else initial_fit_status
+    )
 st.sidebar.button(
     "Clear all selections",
     on_click=clear_compound_selection,
@@ -317,6 +349,21 @@ with assay_tab:
         if selected_assay.empty:
             st.info("The selected compounds have no valid dose-response measurements.")
         else:
+            baseline_warnings = lowest_dose_warnings(selected_assay)
+            if not baseline_warnings.empty:
+                details = "; ".join(
+                    f"{row.compound_id}: {row.response_pct:.1f}% at "
+                    f"{row.conc_nM:,.3g} nM"
+                    for row in baseline_warnings.itertuples(index=False)
+                )
+                st.warning(
+                    f"Large response at the lowest tested concentration "
+                    f"(mean > {LOW_DOSE_WARNING_THRESHOLD:g}%): {details}. "
+                    "For increasing-response assays, the low-response baseline "
+                    "may not have been measured, so the curve may be incomplete "
+                    "and IC₅₀ estimates are less reliable. For decreasing-response "
+                    "assays, a high response at the lowest dose can be expected."
+                )
             st.plotly_chart(
                 dose_response_figure(
                     selected_assay,

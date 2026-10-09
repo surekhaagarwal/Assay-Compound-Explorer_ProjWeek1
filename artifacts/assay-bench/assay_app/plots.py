@@ -27,6 +27,14 @@ def dose_response_figure(
 ) -> go.Figure:
     figure = go.Figure()
     colors = compound_colors(compound_ids)
+    concentration_bounds = [
+        float(data["conc_nM"].min()),
+        float(data["conc_nM"].max()),
+    ]
+    response_bounds = [
+        min(0.0, float(data["response_pct"].min())),
+        max(100.0, float(data["response_pct"].max())),
+    ]
     for compound_id, measurements in data.groupby("compound_id", sort=True):
         fit = fits[compound_id]
         color = colors[compound_id]
@@ -87,10 +95,26 @@ def dose_response_figure(
                     ),
                 )
             )
+        if estimated:
+            concentration_bounds.append(fit.ic50_nM)
+            figure.add_trace(
+                go.Scatter(
+                    x=[fit.ic50_nM, fit.ic50_nM],
+                    y=response_bounds,
+                    mode="lines",
+                    **group,
+                    showlegend=False,
+                    line={"width": 1.5, "color": color, "dash": "dash"},
+                    hovertemplate=(
+                        "IC₅₀: %{x:,.3g} nM"
+                        "<extra>%{fullData.name}</extra>"
+                    ),
+                )
+            )
 
     figure.update_layout(
         title="Dose–response curves: compound response vs concentration",
-        xaxis_title="Concentration (nM)",
+        xaxis_title="Concentration (nM, log₁₀ scale)",
         yaxis_title="Response (%)",
         legend={"title": "Compounds", "groupclick": "togglegroup"},
         hovermode="closest",
@@ -99,9 +123,13 @@ def dose_response_figure(
     )
     figure.update_xaxes(
         type="log",
+        dtick=1,
+        tickformat="~g",
+        ticks="outside",
+        showgrid=True,
         range=[
-            log10(data["conc_nM"].min()) - 0.1,
-            log10(data["conc_nM"].max()) + 0.1,
+            log10(min(concentration_bounds)) - 0.1,
+            log10(max(concentration_bounds)) + 0.1,
         ],
     )
     return figure

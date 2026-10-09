@@ -33,6 +33,43 @@ values, and shows the chemicals' structures and properties.
   upper level, halfway concentration, and steepness.
 - **Colors and legend:** each compound has its own color. The legend identifies
   it and shows its estimated IC50 in nM, or says it could not be estimated.
+- **Dashed vertical lines:** each marks a compound's estimated IC50 and matches
+  its curve's color. The concentration axis expands to include estimates outside
+  the tested range; those estimates still require caution.
+
+### What does the curve fitting toggle do?
+
+In the sidebar, under **Curve fitting**, you will find **Fix bottom/top at
+0% / 100%**. This changes the assumptions used to draw the fitted curve.
+
+The **bottom** is the curve's lower response level, and the **top** is its upper
+response level. These describe the levels where the curve becomes flat; they
+are not necessarily the smallest and largest measured values.
+
+| Toggle setting | What the app does |
+| --- | --- |
+| **Off — default** | Estimates the bottom and top from the measurements, keeping both between 0% and 105%. It also estimates the halfway concentration and the curve's steepness. |
+| **On** | Holds the bottom at exactly 0% and the top at exactly 100%. It estimates only the halfway concentration and steepness. |
+
+**When should I turn it on?** Use fixed limits when the test's reference
+measurements justify treating 0% as no response and 100% as a full response.
+Leave it off when the lower and upper response levels need to be estimated
+from the data. Fixing the limits can help comparison between compounds, but
+incorrect assumptions can make the fit worse or change the IC50 estimate.
+
+**Why can IC50 change?** With the toggle off, IC50 is halfway between the
+estimated bottom and top. With it on, that halfway response is exactly 50%.
+Changing the limits changes the fitted model, so the estimated IC50, curve,
+fit score, and fit status may change.
+
+The toggle **does not change or rescale your measured data**. It also does not
+replace missing measurements or make an incomplete curve reliable. The low-dose
+warning can still appear with either setting.
+
+Changing the toggle recalculates the results while keeping your compound
+checkbox selections. **Fit status** resets to **All fit statuses** so a changed
+classification does not hide a selected compound. **Home** restores the sample
+files and turns the toggle off.
 
 ### What does IC50 mean here?
 
@@ -47,6 +84,13 @@ fit curves where the reported response increases with concentration.
 When comparing comparable results from the same test, a smaller IC50 means a
 lower concentration reaches that halfway point. **It does not, by itself, prove
 that a compound is effective, safe, or a better medicine.**
+
+The app warns if the **average response at a compound's lowest tested
+concentration is greater than 20%**. For an increasing-response assay, this may
+mean the tested doses missed the low-response baseline and the IC50 estimate
+is less reliable, even if its fit status is green. This is a screening warning,
+not a statistical certainty or an activity classification. A high response
+at the lowest dose can be normal for a decreasing-response assay.
 
 ### What do fit status and row colors mean?
 

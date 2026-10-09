@@ -36,7 +36,9 @@ def four_parameter_logistic(
     return bottom + (top - bottom) / (1 + np.power(10.0, exponent))
 
 
-def fit_four_parameter_logistic(data: pd.DataFrame) -> CurveFit:
+def fit_four_parameter_logistic(
+    data: pd.DataFrame, fix_response_limits: bool = False
+) -> CurveFit:
     if data.empty:
         return CurveFit("No dose-response measurements are available.")
 
@@ -56,26 +58,49 @@ def fit_four_parameter_logistic(data: pd.DataFrame) -> CurveFit:
     high_mean = float(np.mean(y[x > np.median(x)]))
     initial_slope = 1.0 if high_mean >= low_mean else -1.0
 
+    initial_bottom = float(np.clip(np.percentile(y, 10), 0.0, 104.0))
     initial = [
-        float(np.percentile(y, 10)),
-        float(np.percentile(y, 90)),
+        initial_bottom,
+        float(np.clip(np.percentile(y, 90), initial_bottom + 1.0, 105.0)),
         float(np.median([log_min, log_max])),
         initial_slope,
     ]
-    lower_bounds = [-200.0, -200.0, log_min - 3.0, -8.0]
-    upper_bounds = [300.0, 300.0, log_max + 3.0, 8.0]
+    lower_bounds = [0.0, 0.0, log_min - 3.0, -8.0]
+    upper_bounds = [105.0, 105.0, log_max + 3.0, 8.0]
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", OptimizeWarning)
-            parameters, _ = curve_fit(
-                four_parameter_logistic,
-                x,
-                y,
-                p0=initial,
-                bounds=(lower_bounds, upper_bounds),
-                maxfev=30_000,
-            )
+            if fix_response_limits:
+                # Equal lower/upper bounds are not accepted by curve_fit, so
+                # optimize only log(IC50) and slope with the endpoints fixed.
+                def fixed_response_logistic(concentration, log_ic50, hill_slope):
+                    return four_parameter_logistic(
+                        concentration, 0.0, 100.0, log_ic50, hill_slope
+                    )
+
+                free_parameters, _ = curve_fit(
+                    fixed_response_logistic,
+                    x,
+                    y,
+                    p0=initial[2:],
+                    bounds=(lower_bounds[2:], upper_bounds[2:]),
+                    maxfev=30_000,
+                )
+                parameters = np.array([0.0, 100.0, *free_parameters])
+            else:
+                parameters, _ = curve_fit(
+                    four_parameter_logistic,
+                    x,
+                    y,
+                    p0=initial,
+                    bounds=(lower_bounds, upper_bounds),
+                    maxfev=30_000,
+                )
+                if parameters[0] > parameters[1]:
+                    # Swapping endpoints and slope sign preserves the curve.
+                    parameters[[0, 1]] = parameters[[1, 0]]
+                    parameters[3] *= -1
         predicted = four_parameter_logistic(x, *parameters)
         residual_sum = float(np.sum((y - predicted) ** 2))
         total_sum = float(np.sum((y - np.mean(y)) ** 2))
