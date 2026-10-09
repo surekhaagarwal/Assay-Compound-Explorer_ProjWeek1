@@ -1,0 +1,9 @@
+{
+  "name": "@workspace/assay-bench",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "../../.pythonlibs/bin/python server.py",
+    "build": "../../.pythonlibs/bin/python -m compileall -q app.py server.py assay_app"
+  }
+}
